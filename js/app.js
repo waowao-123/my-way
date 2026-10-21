@@ -33,12 +33,23 @@
   });
 
   window.registerTool = function ({ iconId, iconText, iconTitle, panelId, panelHTML, onReady }) {
+    // 外层容器：图标 + 标签竖排
+    const wrap = document.createElement('div');
+    wrap.className = 'dock-item';
+
     const btn = document.createElement('button');
     btn.className = 'dock-btn';
     btn.id = iconId;
     btn.title = iconTitle || '';
     btn.textContent = iconText;
-    dock.appendChild(btn);
+
+    const label = document.createElement('span');
+    label.className = 'dock-label';
+    label.textContent = iconTitle || '';
+
+    wrap.appendChild(btn);
+    wrap.appendChild(label);
+    dock.appendChild(wrap);
 
     const panel = document.createElement('div');
     panel.className = 'panel';
