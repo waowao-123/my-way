@@ -1,9 +1,11 @@
 (function () {
-  const FOCUS = 25 * 60;
   const SHORT_BREAK = 5 * 60;
   const LONG_BREAK = 15 * 60;
   const CIRCUMFERENCE = 2 * Math.PI * 88;
   const STORAGE_KEY = 'pomodoroCount';
+  const DURATION_KEY = 'pomodoroFocusMinutes';
+  const PRESETS = [1, 5, 10, 25];
+  const DEFAULT_MINUTES = 5;
 
   window.registerTool({
     iconId: 'pomodoroIcon',
@@ -27,9 +29,14 @@
             <circle class="ring-bg" cx="100" cy="100" r="88"></circle>
             <circle class="ring-progress" id="ringProgress" cx="100" cy="100" r="88"></circle>
           </svg>
-          <div class="pomodoro-time" id="pomodoroTime">25:00</div>
+          <div class="pomodoro-time" id="pomodoroTime">05:00</div>
         </div>
         <div class="pomodoro-mode" id="pomodoroMode">专注</div>
+
+        <div class="pomodoro-presets" id="pomoPresets">
+          ${PRESETS.map(m => `<button class="pomo-preset" data-min="${m}">${m} 分钟</button>`).join('')}
+        </div>
+
         <div class="pomodoro-actions">
           <button class="pomo-btn primary" id="pomoStartBtn">开始</button>
           <button class="pomo-btn" id="pomoResetBtn">重置</button>
@@ -44,9 +51,14 @@
       const startBtn = panel.querySelector('#pomoStartBtn');
       const resetBtn = panel.querySelector('#pomoResetBtn');
       const countEl = panel.querySelector('#pomoCount');
+      const presetsEl = panel.querySelector('#pomoPresets');
+      const presetBtns = presetsEl.querySelectorAll('.pomo-preset');
+
+      let focusMinutes = Number(localStorage.getItem(DURATION_KEY) || DEFAULT_MINUTES);
+      if (!PRESETS.includes(focusMinutes)) focusMinutes = DEFAULT_MINUTES;
 
       let mode = 'focus';
-      let remaining = FOCUS;
+      let remaining = focusMinutes * 60;
       let timerId = null;
       let running = false;
       let finishedCount = Number(localStorage.getItem(STORAGE_KEY) || 0);
@@ -56,7 +68,7 @@
       countEl.textContent = finishedCount;
 
       function getDuration(m) {
-        if (m === 'focus') return FOCUS;
+        if (m === 'focus') return focusMinutes * 60;
         if (m === 'short') return SHORT_BREAK;
         return LONG_BREAK;
       }
@@ -73,10 +85,17 @@
         ring.style.strokeDashoffset = CIRCUMFERENCE * (1 - progress);
       }
 
+      function updatePresetHighlight() {
+        presetBtns.forEach(b => {
+          b.classList.toggle('active', Number(b.dataset.min) === focusMinutes);
+        });
+      }
+
       function setMode(newMode) {
         mode = newMode;
         remaining = getDuration(mode);
         modeEl.textContent = mode === 'focus' ? '专注' : (mode === 'short' ? '短休' : '长休');
+        presetsEl.style.display = mode === 'focus' ? 'flex' : 'none';
         updateDisplay();
       }
 
@@ -139,12 +158,25 @@
         start();
       }
 
+      presetBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          const min = Number(btn.dataset.min);
+          if (!PRESETS.includes(min)) return;
+          focusMinutes = min;
+          localStorage.setItem(DURATION_KEY, min);
+          updatePresetHighlight();
+          stop();
+          setMode('focus');
+        });
+      });
+
       startBtn.addEventListener('click', () => {
         if (running) stop();
         else start();
       });
       resetBtn.addEventListener('click', reset);
 
+      updatePresetHighlight();
       setMode('focus');
     }
   });
