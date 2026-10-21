@@ -1,11 +1,41 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8">
-  <title>吃饭预告</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Space</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#302b63">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="css/main.css">
 </head>
 <body>
-  <h1>Hello, GitHub Pages!</h1>
-  <p>你来想吃啥，微信回我</p>
+
+  <div class="hero">
+    <h1>My Space</h1>
+    <p>点击下方图标，打开你的小工具</p>
+  </div>
+
+  <div class="dock" id="dock"></div>
+
+  <div class="overlay" id="overlay"></div>
+
+  <div id="panelRoot"></div>
+
+  <script src="js/app.js"></script>
+
+  <script src="tools/todo/todo.js"></script>
+  <script src="tools/pomodoro/pomodoro.js"></script>
+  <script src="tools/install/install.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(err => {
+          console.warn('Service Worker 注册失败：', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>
