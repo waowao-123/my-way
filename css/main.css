@@ -246,6 +246,36 @@ li.done .toggle {
 .pomodoro-stats { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
 .pomodoro-stats span { color: var(--accent); font-weight: 700; }
 
+/* ---------- 番茄钟时长预设 ---------- */
+.pomodoro-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 2px;
+}
+.pomo-preset {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.05);
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.2s;
+}
+.pomo-preset:hover {
+  background: rgba(255,255,255,0.12);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+.pomo-preset.active {
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(244,114,182,0.35);
+}
+
 /* ---------- 安装应用 ---------- */
 .install-wrap {
   display: flex; flex-direction: column; align-items: center;
