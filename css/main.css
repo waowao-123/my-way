@@ -406,3 +406,48 @@ li.done .toggle {
   font-size: 0.85rem; color: var(--muted); line-height: 1.7;
 }
 .install-tips b { color: var(--accent); }
+
+/* ---------- 新版本提示横幅 ---------- */
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  background: rgba(30, 27, 55, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--glass-border);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  color: var(--text);
+  font-size: 0.9rem;
+  animation: bannerIn 0.3s ease;
+}
+@keyframes bannerIn {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.update-banner button {
+  border: none;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+#updateNowBtn {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  color: #fff;
+}
+#updateLaterBtn {
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 4px 8px;
+}
+#updateLaterBtn:hover { color: var(--text); }
