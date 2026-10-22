@@ -1,4 +1,4 @@
-const CACHE_NAME = 'my-space-v12';
+const CACHE_NAME = 'my-space-v13';
 const ASSETS = [
   './',
   './index.html',
@@ -43,4 +43,10 @@ self.addEventListener('fetch', event => {
       });
     })
   );
+});
+
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
