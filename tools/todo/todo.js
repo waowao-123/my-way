@@ -6,12 +6,11 @@
 
   let db = null;
   let todos = [];
-  let pendingImageBlob = null;
-  let panelEl = null;
+  let pendingImages = []; // 待添加的 Blob 数组
   let listEl = null;
-  const objectUrls = new Map();
+  const objectUrls = new Map(); // key: `${id}-${index}` -> objectURL
 
-  // ---------- IndexedDB 封装 ----------
+  // ---------- IndexedDB ----------
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -53,7 +52,7 @@
     });
   }
 
-  // ---------- 旧 localStorage 迁移 ----------
+  // ---------- 旧数据迁移（含单图转多图）----------
   async function migrateFromLocalStorage() {
     const raw = localStorage.getItem(LEGACY_KEY);
     if (!raw) return;
@@ -61,21 +60,23 @@
       const old = JSON.parse(raw);
       if (Array.isArray(old) && old.length > 0) {
         for (const item of old) {
-          let imageBlob = null;
-          if (item.image && typeof item.image === 'string' && item.image.startsWith('data:')) {
-            imageBlob = await fetch(item.image).then(r => r.blob());
+          let images = [];
+          if (item.images && Array.isArray(item.images)) {
+            images = item.images;
+          } else if (item.image && typeof item.image === 'string' && item.image.startsWith('data:')) {
+            images = [await fetch(item.image).then(r => r.blob())];
           }
           await putTodo({
             id: item.id || Date.now() + Math.random(),
             text: item.text || '',
             done: !!item.done,
-            ...(imageBlob ? { image: imageBlob } : {})
+            ...(images.length ? { images } : {})
           });
         }
       }
       localStorage.removeItem(LEGACY_KEY);
     } catch (e) {
-      console.warn('旧数据迁移失败，保留原 localStorage 数据', e);
+      console.warn('旧数据迁移失败', e);
     }
   }
 
@@ -86,18 +87,20 @@
     }[c]));
   }
 
-  function getObjectUrl(todo) {
-    if (!todo.image) return null;
-    if (objectUrls.has(todo.id)) return objectUrls.get(todo.id);
-    const url = URL.createObjectURL(todo.image);
-    objectUrls.set(todo.id, url);
+  function getObjectUrl(id, index, blob) {
+    const key = `${id}-${index}`;
+    if (objectUrls.has(key)) return objectUrls.get(key);
+    const url = URL.createObjectURL(blob);
+    objectUrls.set(key, url);
     return url;
   }
 
-  function revokeObjectUrl(id) {
-    if (objectUrls.has(id)) {
-      URL.revokeObjectURL(objectUrls.get(id));
-      objectUrls.delete(id);
+  function revokeTodoUrls(id) {
+    for (const key of [...objectUrls.keys()]) {
+      if (key.startsWith(`${id}-`)) {
+        URL.revokeObjectURL(objectUrls.get(key));
+        objectUrls.delete(key);
+      }
     }
   }
 
@@ -108,15 +111,18 @@
       return;
     }
     listEl.innerHTML = todos.map(t => {
-      const url = getObjectUrl(t);
+      const imgs = (t.images || []).map((blob, i) => {
+        const url = getObjectUrl(t.id, i, blob);
+        return `<img class="todo-thumb" src="${url}" alt="任务图片" data-preview="${url}">`;
+      }).join('');
       return `
         <li data-id="${t.id}" class="${t.done ? 'done' : ''}">
           <button class="toggle">✓</button>
           <div class="todo-body">
             <span class="todo-text">${escapeHtml(t.text)}</span>
-            ${url ? `<img class="todo-thumb" src="${url}" alt="任务图片" data-preview="${t.id}">` : ''}
+            ${imgs ? `<div class="todo-thumbs">${imgs}</div>` : ''}
           </div>
-          ${t.image ? `<button class="del-img" data-delimg="${t.id}" title="移除图片">🖼✕</button>` : ''}
+          ${t.images && t.images.length ? `<button class="del-img" data-delimg="${t.id}" title="移除全部图片">🖼✕</button>` : ''}
           <button class="del" title="删除任务">✕</button>
         </li>
       `;
@@ -138,6 +144,28 @@
     document.addEventListener('keydown', onKey);
   }
 
+  // ---------- 预览区渲染 ----------
+  function renderPreview(container) {
+    container.innerHTML = '';
+    if (pendingImages.length === 0) {
+      container.hidden = true;
+      return;
+    }
+    container.hidden = false;
+    pendingImages.forEach((blob, idx) => {
+      const item = document.createElement('div');
+      item.className = 'preview-item';
+      const url = URL.createObjectURL(blob);
+      item.innerHTML = `<img src="${url}" alt="预览"><button class="img-remove-btn" data-idx="${idx}" title="移除">✕</button>`;
+      item.querySelector('.img-remove-btn').addEventListener('click', () => {
+        URL.revokeObjectURL(url);
+        pendingImages.splice(idx, 1);
+        renderPreview(container);
+      });
+      container.appendChild(item);
+    });
+  }
+
   // ---------- 注册工具 ----------
   window.registerTool({
     iconId: 'todoIcon',
@@ -153,25 +181,18 @@
         <input type="text" id="todoInput" placeholder="今天想完成什么？" maxlength="60">
         <button class="img-pick-btn" id="todoImgBtn" title="添加图片">📷</button>
         <button class="add-btn" id="todoAddBtn">添加</button>
-        <input type="file" id="todoImgFile" accept="image/*" hidden>
+        <input type="file" id="todoImgFile" accept="image/*" multiple hidden>
       </div>
-      <div class="image-preview" id="todoImgPreview" hidden>
-        <img id="todoImgPreviewEl" alt="预览">
-        <button class="img-remove-btn" id="todoImgRemove" title="移除图片">✕</button>
-      </div>
+      <div class="image-preview" id="todoImgPreview" hidden></div>
       <ul id="todoList"></ul>
     `,
     async onReady(panel) {
-      panelEl = panel;
       listEl = panel.querySelector('#todoList');
-
       const input = panel.querySelector('#todoInput');
       const addBtn = panel.querySelector('#todoAddBtn');
       const imgBtn = panel.querySelector('#todoImgBtn');
       const imgFile = panel.querySelector('#todoImgFile');
       const previewWrap = panel.querySelector('#todoImgPreview');
-      const previewEl = panel.querySelector('#todoImgPreviewEl');
-      const previewRemove = panel.querySelector('#todoImgRemove');
 
       try {
         db = await openDB();
@@ -187,26 +208,13 @@
 
       imgBtn.addEventListener('click', () => imgFile.click());
 
-      // 直接使用原始 File，不压缩
       imgFile.addEventListener('change', () => {
-        const file = imgFile.files && imgFile.files[0];
+        const files = Array.from(imgFile.files || []);
         imgFile.value = '';
-        if (!file) return;
-        if (!file.type.startsWith('image/')) {
-          alert('请选择图片文件');
-          return;
-        }
-        pendingImageBlob = file;
-        if (previewEl.src) URL.revokeObjectURL(previewEl.src);
-        previewEl.src = URL.createObjectURL(file);
-        previewWrap.hidden = false;
-      });
-
-      previewRemove.addEventListener('click', () => {
-        if (previewEl.src) URL.revokeObjectURL(previewEl.src);
-        pendingImageBlob = null;
-        previewEl.src = '';
-        previewWrap.hidden = true;
+        files.forEach(file => {
+          if (file.type.startsWith('image/')) pendingImages.push(file);
+        });
+        renderPreview(previewWrap);
       });
 
       addBtn.addEventListener('click', async () => {
@@ -216,16 +224,14 @@
           id: Date.now(),
           text,
           done: false,
-          ...(pendingImageBlob ? { image: pendingImageBlob } : {})
+          ...(pendingImages.length ? { images: [...pendingImages] } : {})
         };
         try {
           await putTodo(todo);
           todos.unshift(todo);
           input.value = '';
-          if (previewEl.src) URL.revokeObjectURL(previewEl.src);
-          pendingImageBlob = null;
-          previewEl.src = '';
-          previewWrap.hidden = true;
+          pendingImages = [];
+          renderPreview(previewWrap);
           render();
         } catch (e) {
           alert('保存失败，可能是存储空间不足');
@@ -252,7 +258,7 @@
         if (e.target.classList.contains('del')) {
           try {
             await deleteTodo(id);
-            revokeObjectUrl(id);
+            revokeTodoUrls(id);
             todos = todos.filter(t => t.id !== id);
             render();
           } catch (err) { console.warn(err); }
@@ -260,14 +266,14 @@
         }
 
         if (e.target.classList.contains('del-img') && todo) {
-          delete todo.image;
-          revokeObjectUrl(id);
+          delete todo.images;
+          revokeTodoUrls(id);
           try { await putTodo(todo); render(); } catch (err) { console.warn(err); }
           return;
         }
 
         if (e.target.classList.contains('todo-thumb')) {
-          openImageViewer(e.target.src);
+          openImageViewer(e.target.dataset.preview);
         }
       });
     }
