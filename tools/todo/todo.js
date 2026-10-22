@@ -2,17 +2,14 @@
   const DB_NAME = 'my-space-db';
   const DB_VERSION = 1;
   const STORE = 'todos';
-  const LEGACY_KEY = 'myTodos'; // 旧 localStorage key，用于迁移
-  const MAX_IMAGE_BYTES = 500 * 1024;
-  const MAX_DIMENSION = 800;
-  const JPEG_QUALITY = 0.75;
+  const LEGACY_KEY = 'myTodos';
 
   let db = null;
-  let todos = [];              // 内存中的任务列表，按插入顺序（新在前）
-  let pendingImageBlob = null; // 输入区待添加的图片 Blob
+  let todos = [];
+  let pendingImageBlob = null;
   let panelEl = null;
   let listEl = null;
-  const objectUrls = new Map(); // id -> objectURL，便于释放
+  const objectUrls = new Map();
 
   // ---------- IndexedDB 封装 ----------
   function openDB() {
@@ -32,8 +29,7 @@
   function getAllTodos() {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readonly');
-      const store = tx.objectStore(STORE);
-      const req = store.getAll();
+      const req = tx.objectStore(STORE).getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
@@ -57,16 +53,7 @@
     });
   }
 
-  function clearTodos() {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).clear();
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  }
-
-  // ---------- 从旧 localStorage 迁移 ----------
+  // ---------- 旧 localStorage 迁移 ----------
   async function migrateFromLocalStorage() {
     const raw = localStorage.getItem(LEGACY_KEY);
     if (!raw) return;
@@ -74,10 +61,9 @@
       const old = JSON.parse(raw);
       if (Array.isArray(old) && old.length > 0) {
         for (const item of old) {
-          // 旧数据的 image 可能是 Base64 字符串，转成 Blob
           let imageBlob = null;
           if (item.image && typeof item.image === 'string' && item.image.startsWith('data:')) {
-            imageBlob = await dataUrlToBlob(item.image);
+            imageBlob = await fetch(item.image).then(r => r.blob());
           }
           await putTodo({
             id: item.id || Date.now() + Math.random(),
@@ -91,52 +77,6 @@
     } catch (e) {
       console.warn('旧数据迁移失败，保留原 localStorage 数据', e);
     }
-  }
-
-  function dataUrlToBlob(dataUrl) {
-    return fetch(dataUrl).then(r => r.blob());
-  }
-
-  // ---------- 图片压缩 ----------
-  function compressImage(file) {
-    return new Promise((resolve, reject) => {
-      if (!file.type.startsWith('image/')) {
-        reject(new Error('不是图片文件'));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        const img = new Image();
-        img.onload = () => {
-          let { width, height } = img;
-          if (width > height && width > MAX_DIMENSION) {
-            height = Math.round(height * MAX_DIMENSION / width);
-            width = MAX_DIMENSION;
-          } else if (height >= width && height > MAX_DIMENSION) {
-            width = Math.round(width * MAX_DIMENSION / height);
-            height = MAX_DIMENSION;
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-
-          canvas.toBlob(blob => {
-            if (!blob) { reject(new Error('图片压缩失败')); return; }
-            if (blob.size > MAX_IMAGE_BYTES) {
-              reject(new Error('图片压缩后仍然太大，请换一张小一点的图'));
-              return;
-            }
-            resolve(blob);
-          }, 'image/jpeg', JPEG_QUALITY);
-        };
-        img.onerror = () => reject(new Error('图片加载失败'));
-        img.src = reader.result;
-      };
-      reader.onerror = () => reject(new Error('文件读取失败'));
-      reader.readAsDataURL(file);
-    });
   }
 
   // ---------- 渲染 ----------
@@ -233,12 +173,10 @@
       const previewEl = panel.querySelector('#todoImgPreviewEl');
       const previewRemove = panel.querySelector('#todoImgRemove');
 
-      // 打开数据库并加载数据
       try {
         db = await openDB();
         await migrateFromLocalStorage();
         todos = await getAllTodos();
-        // 新任务在前：按 id 倒序（id 是时间戳）
         todos.sort((a, b) => b.id - a.id);
       } catch (e) {
         console.error('IndexedDB 初始化失败', e);
@@ -249,17 +187,19 @@
 
       imgBtn.addEventListener('click', () => imgFile.click());
 
-      imgFile.addEventListener('change', async () => {
+      // 直接使用原始 File，不压缩
+      imgFile.addEventListener('change', () => {
         const file = imgFile.files && imgFile.files[0];
         imgFile.value = '';
         if (!file) return;
-        try {
-          pendingImageBlob = await compressImage(file);
-          previewEl.src = URL.createObjectURL(pendingImageBlob);
-          previewWrap.hidden = false;
-        } catch (err) {
-          alert(err.message || '图片处理失败');
+        if (!file.type.startsWith('image/')) {
+          alert('请选择图片文件');
+          return;
         }
+        pendingImageBlob = file;
+        if (previewEl.src) URL.revokeObjectURL(previewEl.src);
+        previewEl.src = URL.createObjectURL(file);
+        previewWrap.hidden = false;
       });
 
       previewRemove.addEventListener('click', () => {
