@@ -33,7 +33,6 @@
   });
 
   window.registerTool = function ({ iconId, iconText, iconTitle, panelId, panelHTML, onReady }) {
-    // 外层容器：图标 + 标签竖排
     const wrap = document.createElement('div');
     wrap.className = 'dock-item';
 
@@ -61,4 +60,53 @@
 
     if (typeof onReady === 'function') onReady(panel, btn);
   };
+
+  // ---------- 新版本提示 ----------
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      reg.update();
+
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateBanner(newWorker);
+          }
+        });
+      });
+    }).catch(err => {
+      console.warn('Service Worker 注册失败：', err);
+    });
+
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+  }
+
+  function showUpdateBanner(newWorker) {
+    if (document.getElementById('updateBanner')) return;
+
+    const banner = document.createElement('div');
+    banner.id = 'updateBanner';
+    banner.className = 'update-banner';
+    banner.innerHTML = `
+      <span>有新版本可用</span>
+      <button id="updateNowBtn">立即刷新</button>
+      <button id="updateLaterBtn" title="稍后">✕</button>
+    `;
+    document.body.appendChild(banner);
+
+    banner.querySelector('#updateNowBtn').addEventListener('click', () => {
+      newWorker.postMessage({ type: 'SKIP_WAITING' });
+      banner.remove();
+    });
+
+    banner.querySelector('#updateLaterBtn').addEventListener('click', () => {
+      banner.remove();
+    });
+  }
 })();
