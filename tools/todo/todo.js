@@ -17,6 +17,7 @@
   let deletedListEl = null;
   const objectUrls = new Map();
 
+  // ---------- IndexedDB ----------
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -78,6 +79,7 @@
   const deleteTodo = (id) => deleteFrom(STORE, id);
   const deleteDeleted = (id) => deleteFrom(DELETED_STORE, id);
 
+  // ---------- 迁移旧 localStorage ----------
   async function migrateFromLocalStorage() {
     const raw = localStorage.getItem(LEGACY_KEY);
     if (!raw) return;
@@ -105,6 +107,7 @@
     }
   }
 
+  // ---------- 工具函数 ----------
   function escapeHtml(str) {
     return str.replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -144,6 +147,15 @@
     return `${Math.floor(diff / 3600000)} 小时前删除`;
   }
 
+  function guessExt(type) {
+    if (!type) return 'jpg';
+    if (type.includes('png')) return 'png';
+    if (type.includes('gif')) return 'gif';
+    if (type.includes('webp')) return 'webp';
+    if (type.includes('svg')) return 'svg';
+    return 'jpg';
+  }
+
   // ---------- 渲染 ----------
   function render() {
     if (!listEl) return;
@@ -181,13 +193,14 @@
               }
               ${imgs ? `<div class="todo-thumbs">${imgs}</div>` : ''}
             </div>
-            ${!isEditing ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多">⋯</button>` : ''}
+            ${!isEditing ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多操作">⋯</button>` : ''}
           </div>
           ${isExpanded && !isEditing ? `
             <div class="todo-actions expanded-actions">
-              <button class="action-btn" data-edit="${t.id}">编辑</button>
-              ${t.images && t.images.length ? `<button class="action-btn" data-delimg="${t.id}">移除图片</button>` : ''}
-              <button class="action-btn danger" data-del="${t.id}">删除</button>
+              <button class="action-btn" data-edit="${t.id}"><span class="btn-ico">✏️</span>编辑</button>
+              ${t.images && t.images.length ? `<button class="action-btn" data-delimg="${t.id}"><span class="btn-ico">🖼</span>移除图片</button>` : ''}
+              ${t.images && t.images.length ? `<button class="action-btn" data-downloadimg="${t.id}"><span class="btn-ico">⬇️</span>下载图片</button>` : ''}
+              <button class="action-btn danger" data-del="${t.id}"><span class="btn-ico">🗑</span>删除</button>
             </div>
           ` : ''}
         </li>
@@ -216,7 +229,7 @@
       return;
     }
     deletedToggleEl.hidden = false;
-    deletedToggleEl.textContent = `最近删除 (${all.length})`;
+    deletedToggleEl.innerHTML = `<span class="chip-icon">🕘</span>最近删除 (${all.length})`;
     all.sort((a, b) => b.deletedAt - a.deletedAt);
     deletedListEl.innerHTML = all.map(item => `
       <li class="deleted-item">
@@ -229,6 +242,7 @@
     `).join('');
   }
 
+  // ---------- 编辑 ----------
   function enterEdit(id) { editingId = id; expandedId = id; render(); }
 
   async function saveEdit(id, text) {
@@ -244,6 +258,7 @@
 
   function cancelEdit() { editingId = null; render(); }
 
+  // ---------- 删除 / 撤销 ----------
   async function softDelete(id) {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
@@ -278,6 +293,33 @@
     }
   }
 
+  // ---------- 下载单条任务的图片 ----------
+  async function downloadTaskImages(id) {
+    const todo = todos.find(t => t.id === id);
+    if (!todo || !todo.images || todo.images.length === 0) {
+      alert('这条任务没有图片');
+      return;
+    }
+    const safeText = (todo.text || 'task').replace(/[\\/:*?"<>|]/g, '_').slice(0, 20);
+    let count = 0;
+    for (let i = 0; i < todo.images.length; i++) {
+      const blob = todo.images[i];
+      const ext = guessExt(blob.type);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeText}_${i + 1}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      count++;
+      await new Promise(r => setTimeout(r, 200));
+    }
+    alert(`已开始下载 ${count} 张图片`);
+  }
+
+  // ---------- 图片查看器 ----------
   function openImageViewer(src) {
     const viewer = document.createElement('div');
     viewer.className = 'img-viewer';
@@ -292,6 +334,7 @@
     document.addEventListener('keydown', onKey);
   }
 
+  // ---------- 预览区 ----------
   function renderPreview(container) {
     container.innerHTML = '';
     if (pendingImages.length === 0) { container.hidden = true; return; }
@@ -310,6 +353,7 @@
     });
   }
 
+  // ---------- 导出 ----------
   async function exportBackup() {
     try {
       const all = await getAllTodos();
@@ -335,6 +379,7 @@
     }
   }
 
+  // ---------- 导入 ----------
   async function importBackup(file) {
     try {
       const text = await file.text();
@@ -367,52 +412,6 @@
     }
   }
 
-  // ---------- 一键下载全部图片 ----------
-  async function downloadAllImages() {
-    try {
-      const all = await getAllTodos();
-      const files = [];
-      for (const t of all) {
-        if (!t.images || !t.images.length) continue;
-        for (let i = 0; i < t.images.length; i++) {
-          const blob = t.images[i];
-          const ext = guessExt(blob.type);
-          const safeText = (t.text || 'task').replace(/[\\/:*?"<>|]/g, '_').slice(0, 20);
-          files.push({ name: `${safeText}_${i + 1}.${ext}`, blob });
-        }
-      }
-      if (files.length === 0) { alert('当前没有任何任务图片可下载'); return; }
-
-      // 逐个触发下载（浏览器会连续弹出多个保存，或按设置自动保存到下载目录）
-      let count = 0;
-      for (const f of files) {
-        const url = URL.createObjectURL(f.blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = f.name;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
-        count++;
-        await new Promise(r => setTimeout(r, 200));
-      }
-      alert(`已开始下载 ${count} 张图片，浏览器可能会连续弹出保存提示。`);
-    } catch (e) {
-      alert('下载失败：' + (e.message || e));
-      console.warn(e);
-    }
-  }
-
-  function guessExt(type) {
-    if (!type) return 'jpg';
-    if (type.includes('png')) return 'png';
-    if (type.includes('gif')) return 'gif';
-    if (type.includes('webp')) return 'webp';
-    if (type.includes('svg')) return 'svg';
-    return 'jpg';
-  }
-
   // ---------- 注册 ----------
   window.registerTool({
     iconId: 'todoIcon',
@@ -430,9 +429,6 @@
         </button>
         <button class="tool-chip import" id="todoImportBtn" title="导入备份文件">
           <span class="chip-icon">⬆</span><span>导入</span>
-        </button>
-        <button class="tool-chip images" id="todoDownloadAllBtn" title="下载全部图片">
-          <span class="chip-icon">🖼</span><span>下载全部图片</span>
         </button>
       </div>
       <div class="input-row">
@@ -465,7 +461,6 @@
       const previewWrap = panel.querySelector('#todoImgPreview');
       const exportBtn = panel.querySelector('#todoExportBtn');
       const importBtn = panel.querySelector('#todoImportBtn');
-      const downloadAllBtn = panel.querySelector('#todoDownloadAllBtn');
       const importFile = panel.querySelector('#todoImportFile');
 
       try {
@@ -513,7 +508,6 @@
 
       exportBtn.addEventListener('click', exportBackup);
       importBtn.addEventListener('click', () => importFile.click());
-      downloadAllBtn.addEventListener('click', downloadAllImages);
       importFile.addEventListener('change', async () => {
         const f = importFile.files && importFile.files[0];
         importFile.value = '';
@@ -536,7 +530,6 @@
         const id = Number(li.dataset.id);
         const todo = todos.find(t => t.id === id);
 
-        // 点文字切换完成状态
         if (e.target.dataset.toggledone !== undefined && todo) {
           todo.done = !todo.done;
           try { await putTodo(todo); render(); } catch (err) { console.warn(err); }
@@ -551,6 +544,7 @@
         }
 
         if (e.target.dataset.del !== undefined) { await softDelete(id); return; }
+        if (e.target.dataset.downloadimg !== undefined) { await downloadTaskImages(id); return; }
 
         if (e.target.dataset.thumbdel !== undefined && todo) {
           const idx = Number(e.target.dataset.idx);
