@@ -10,6 +10,7 @@
   let todos = [];
   let pendingImages = [];
   let editingId = null;
+  let expandedId = null;
   let listEl = null;
   let deletedToggleEl = null;
   let deletedSectionEl = null;
@@ -106,7 +107,7 @@
     }
   }
 
-  // ---------- 工具函数 ----------
+  // ---------- 工具 ----------
   function escapeHtml(str) {
     return str.replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -146,7 +147,7 @@
     return `${Math.floor(diff / 3600000)} 小时前删除`;
   }
 
-  // ---------- 渲染 ----------
+  // ---------- 渲染主列表 ----------
   function render() {
     if (!listEl) return;
     if (todos.length === 0) {
@@ -155,37 +156,45 @@
     }
     listEl.innerHTML = todos.map(t => {
       const isEditing = t.id === editingId;
+      const isExpanded = t.id === expandedId;
+
       const imgs = (t.images || []).map((blob, i) => {
         const url = getObjectUrl(t.id, i, blob);
         return `
           <div class="thumb-wrap">
             <img class="todo-thumb" src="${url}" alt="任务图片" data-preview="${url}">
-            <button class="thumb-del" data-thumbdel="${t.id}" data-idx="${i}" title="删除这张图片">✕</button>
+            <button class="thumb-del-text" data-thumbdel="${t.id}" data-idx="${i}">删除</button>
           </div>
         `;
       }).join('');
 
       return `
-        <li data-id="${t.id}" class="${t.done ? 'done' : ''}">
-          <button class="toggle">✓</button>
-          <div class="todo-body">
-            ${isEditing
-              ? `<div class="edit-row">
-                   <input class="edit-input" data-editinput="${t.id}" value="${escapeHtml(t.text)}" maxlength="60">
-                 </div>`
-              : `<span class="todo-text">${escapeHtml(t.text)}</span>`
-            }
-            ${imgs ? `<div class="todo-thumbs">${imgs}</div>` : ''}
-            <div class="todo-actions">
+        <li data-id="${t.id}" class="${t.done ? 'done' : ''} ${isExpanded ? 'expanded' : ''}">
+          <div class="todo-main">
+            <button class="toggle">✓</button>
+            <div class="todo-body">
               ${isEditing
-                ? `<button class="action-btn primary" data-save="${t.id}">保存</button>
-                   <button class="action-btn" data-cancel="1">取消</button>`
-                : `<button class="action-btn" data-edit="${t.id}">编辑</button>
-                   ${t.images && t.images.length ? `<button class="action-btn" data-delimg="${t.id}">移除图片</button>` : ''}
-                   <button class="action-btn danger" data-del="${t.id}">删除</button>`
+                ? `<div class="edit-row">
+                     <input class="edit-input" data-editinput="${t.id}" value="${escapeHtml(t.text)}" maxlength="60">
+                     <div class="todo-actions">
+                       <button class="action-btn primary" data-save="${t.id}">保存</button>
+                       <button class="action-btn" data-cancel="1">取消</button>
+                     </div>
+                   </div>`
+                : `<span class="todo-text" data-toggleexpand="${t.id}">${escapeHtml(t.text)}</span>`
               }
+              ${imgs ? `<div class="todo-thumbs">${imgs}</div>` : ''}
             </div>
+            ${!isEditing && (t.images && t.images.length > 0) ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多">⋯</button>` : ''}
+            ${!isEditing && (!t.images || t.images.length === 0) ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多">⋯</button>` : ''}
           </div>
+          ${isExpanded && !isEditing ? `
+            <div class="todo-actions expanded-actions">
+              <button class="action-btn" data-edit="${t.id}">编辑</button>
+              ${t.images && t.images.length ? `<button class="action-btn" data-delimg="${t.id}">移除图片</button>` : ''}
+              <button class="action-btn danger" data-del="${t.id}">删除</button>
+            </div>
+          ` : ''}
         </li>
       `;
     }).join('');
@@ -196,13 +205,8 @@
         input.focus();
         input.select();
         input.addEventListener('keydown', e => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            saveEdit(editingId, input.value);
-          } else if (e.key === 'Escape') {
-            e.preventDefault();
-            cancelEdit();
-          }
+          if (e.key === 'Enter') { e.preventDefault(); saveEdit(editingId, input.value); }
+          else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
         });
       }
     }
@@ -233,6 +237,7 @@
   // ---------- 编辑 ----------
   function enterEdit(id) {
     editingId = id;
+    expandedId = id;
     render();
   }
 
@@ -262,6 +267,7 @@
     revokeTodoUrls(id);
     todos = todos.filter(t => t.id !== id);
     if (editingId === id) editingId = null;
+    if (expandedId === id) expandedId = null;
     render();
     await updateDeletedUI();
   }
@@ -282,9 +288,7 @@
     const all = await getAllDeleted();
     const cutoff = Date.now() - DAY_MS;
     for (const item of all) {
-      if (item.deletedAt < cutoff) {
-        await deleteDeleted(item.id);
-      }
+      if (item.deletedAt < cutoff) await deleteDeleted(item.id);
     }
   }
 
@@ -325,7 +329,7 @@
     });
   }
 
-  // ---------- 导出备份 ----------
+  // ---------- 导出 ----------
   async function exportBackup() {
     try {
       const all = await getAllTodos();
@@ -360,7 +364,7 @@
     }
   }
 
-  // ---------- 导入备份 ----------
+  // ---------- 导入 ----------
   async function importBackup(file) {
     try {
       const text = await file.text();
@@ -377,20 +381,15 @@
         const existing = await getFrom(STORE, id);
         if (existing) { skipped++; continue; }
 
-        const rawImgs = Array.isArray(item.images) ? item.images
-                       : (item.image ? [item.image] : []);
+        const rawImgs = Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []);
         const images = [];
         for (const img of rawImgs) {
           if (typeof img === 'string' && img.startsWith('data:')) {
-            try {
-              images.push(await fetch(img).then(r => r.blob()));
-            } catch (e) {}
+            try { images.push(await fetch(img).then(r => r.blob())); } catch (e) {}
           }
         }
         await putTodo({
-          id,
-          text: item.text,
-          done: !!item.done,
+          id, text: item.text, done: !!item.done,
           ...(images.length ? { images } : {})
         });
         added++;
@@ -405,7 +404,7 @@
     }
   }
 
-  // ---------- 注册工具 ----------
+  // ---------- 注册 ----------
   window.registerTool({
     iconId: 'todoIcon',
     iconText: '📝',
@@ -479,9 +478,7 @@
         const text = input.value.trim();
         if (!text) return;
         const todo = {
-          id: Date.now(),
-          text,
-          done: false,
+          id: Date.now(), text, done: false,
           ...(pendingImages.length ? { images: [...pendingImages] } : {})
         };
         try {
@@ -497,9 +494,7 @@
         }
       });
 
-      input.addEventListener('keydown', e => {
-        if (e.key === 'Enter') addBtn.click();
-      });
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') addBtn.click(); });
 
       exportBtn.addEventListener('click', exportBackup);
       importBtn.addEventListener('click', () => importFile.click());
@@ -516,8 +511,7 @@
       deletedListEl.addEventListener('click', async e => {
         const btn = e.target.closest('[data-restore]');
         if (!btn) return;
-        const id = Number(btn.dataset.restore);
-        await restoreDeleted(id);
+        await restoreDeleted(Number(btn.dataset.restore));
       });
 
       listEl.addEventListener('click', async e => {
@@ -532,8 +526,15 @@
           return;
         }
 
+        if (e.target.dataset.toggleexpand !== undefined) {
+          if (editingId === id) return;
+          expandedId = expandedId === id ? null : id;
+          render();
+          return;
+        }
+
         if (e.target.dataset.del !== undefined) {
-          try { await softDelete(id); } catch (err) { console.warn(err); }
+          await softDelete(id);
           return;
         }
 
