@@ -201,6 +201,32 @@ li.done .toggle {
 .panel::-webkit-scrollbar { width: 6px; }
 .panel::-webkit-scrollbar-thumb { background: rgba(167,139,250,0.4); border-radius: 3px; }
 
+/* ---------- 待办清单：header 操作按钮 ---------- */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,0.1);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.2s;
+}
+.icon-btn:hover {
+  background: rgba(167,139,250,0.3);
+  transform: translateY(-1px);
+}
+.icon-btn:active { transform: scale(0.94); }
+
 /* ---------- 待办清单：图片功能（多图） ---------- */
 .img-pick-btn {
   flex-shrink: 0;
@@ -268,6 +294,13 @@ li.done .toggle {
   flex-wrap: wrap;
   gap: 6px;
 }
+
+/* ---------- 待办清单：单张图片删除 ---------- */
+.thumb-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
 .todo-thumb {
   display: block;
   max-width: 110px;
@@ -282,6 +315,31 @@ li.done .toggle {
   background: rgba(255,255,255,0.04);
 }
 .todo-thumb:hover { transform: scale(1.03); }
+.thumb-del {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(30,27,55,0.9);
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  touch-action: manipulation;
+  transition: background 0.2s, transform 0.2s;
+}
+.thumb-del:hover,
+.thumb-del:active {
+  background: rgba(244,114,182,0.95);
+  transform: scale(1.08);
+}
 
 .del-img {
   flex-shrink: 0;
