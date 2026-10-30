@@ -1,13 +1,19 @@
 (function () {
   const DB_NAME = 'my-space-db';
-  const DB_VERSION = 1;
+  const DB_VERSION = 2;
   const STORE = 'todos';
+  const DELETED_STORE = 'deleted';
   const LEGACY_KEY = 'myTodos';
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
   let db = null;
   let todos = [];
   let pendingImages = [];
+  let editingId = null;
   let listEl = null;
+  let deletedToggleEl = null;
+  let deletedSectionEl = null;
+  let deletedListEl = null;
   const objectUrls = new Map();
 
   // ---------- IndexedDB ----------
@@ -19,47 +25,58 @@
         if (!database.objectStoreNames.contains(STORE)) {
           database.createObjectStore(STORE, { keyPath: 'id' });
         }
+        if (!database.objectStoreNames.contains(DELETED_STORE)) {
+          database.createObjectStore(DELETED_STORE, { keyPath: 'id' });
+        }
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
     });
   }
 
-  function getAllTodos() {
+  function getAllFrom(store) {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).getAll();
+      const tx = db.transaction(store, 'readonly');
+      const req = tx.objectStore(store).getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
   }
 
-  function getTodo(id) {
+  function getFrom(store, id) {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).get(id);
+      const tx = db.transaction(store, 'readonly');
+      const req = tx.objectStore(store).get(id);
       req.onsuccess = () => resolve(req.result || null);
       req.onerror = () => reject(req.error);
     });
   }
 
-  function putTodo(todo) {
+  function putTo(store, obj) {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put(todo);
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).put(obj);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
 
-  function deleteTodo(id) {
+  function deleteFrom(store, id) {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).delete(id);
+      const tx = db.transaction(store, 'readwrite');
+      tx.objectStore(store).delete(id);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
+
+  const getAllTodos = () => getAllFrom(STORE);
+  const getAllDeleted = () => getAllFrom(DELETED_STORE);
+  const getDeleted = (id) => getFrom(DELETED_STORE, id);
+  const putTodo = (obj) => putTo(STORE, obj);
+  const putDeleted = (obj) => putTo(DELETED_STORE, obj);
+  const deleteTodo = (id) => deleteFrom(STORE, id);
+  const deleteDeleted = (id) => deleteFrom(DELETED_STORE, id);
 
   // ---------- 迁移旧 localStorage ----------
   async function migrateFromLocalStorage() {
@@ -122,6 +139,13 @@
     }
   }
 
+  function formatDeletedTime(ts) {
+    const diff = Date.now() - ts;
+    if (diff < 60 * 1000) return '刚刚删除';
+    if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)} 分钟前删除`;
+    return `${Math.floor(diff / 3600000)} 小时前删除`;
+  }
+
   // ---------- 渲染 ----------
   function render() {
     if (!listEl) return;
@@ -130,6 +154,7 @@
       return;
     }
     listEl.innerHTML = todos.map(t => {
+      const isEditing = t.id === editingId;
       const imgs = (t.images || []).map((blob, i) => {
         const url = getObjectUrl(t.id, i, blob);
         return `
@@ -139,18 +164,128 @@
           </div>
         `;
       }).join('');
+
       return `
         <li data-id="${t.id}" class="${t.done ? 'done' : ''}">
           <button class="toggle">✓</button>
           <div class="todo-body">
-            <span class="todo-text">${escapeHtml(t.text)}</span>
+            ${isEditing
+              ? `<div class="edit-row">
+                   <input class="edit-input" data-editinput="${t.id}" value="${escapeHtml(t.text)}" maxlength="60">
+                 </div>`
+              : `<span class="todo-text">${escapeHtml(t.text)}</span>`
+            }
             ${imgs ? `<div class="todo-thumbs">${imgs}</div>` : ''}
+            <div class="todo-actions">
+              ${isEditing
+                ? `<button class="action-btn primary" data-save="${t.id}">保存</button>
+                   <button class="action-btn" data-cancel="1">取消</button>`
+                : `<button class="action-btn" data-edit="${t.id}">编辑</button>
+                   ${t.images && t.images.length ? `<button class="action-btn" data-delimg="${t.id}">移除图片</button>` : ''}
+                   <button class="action-btn danger" data-del="${t.id}">删除</button>`
+              }
+            </div>
           </div>
-          ${t.images && t.images.length ? `<button class="del-img" data-delimg="${t.id}" title="移除全部图片">🖼✕</button>` : ''}
-          <button class="del" title="删除任务">✕</button>
         </li>
       `;
     }).join('');
+
+    if (editingId) {
+      const input = listEl.querySelector(`[data-editinput="${editingId}"]`);
+      if (input) {
+        input.focus();
+        input.select();
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            saveEdit(editingId, input.value);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelEdit();
+          }
+        });
+      }
+    }
+  }
+
+  async function updateDeletedUI() {
+    if (!deletedToggleEl || !deletedSectionEl || !deletedListEl) return;
+    const all = await getAllDeleted();
+    if (all.length === 0) {
+      deletedToggleEl.hidden = true;
+      deletedSectionEl.hidden = true;
+      return;
+    }
+    deletedToggleEl.hidden = false;
+    deletedToggleEl.textContent = `最近删除 (${all.length})`;
+    all.sort((a, b) => b.deletedAt - a.deletedAt);
+    deletedListEl.innerHTML = all.map(item => `
+      <li class="deleted-item">
+        <div class="deleted-info">
+          <span class="deleted-text">${escapeHtml(item.text)}</span>
+          <span class="deleted-time">${formatDeletedTime(item.deletedAt)}</span>
+        </div>
+        <button class="action-btn" data-restore="${item.id}">撤销</button>
+      </li>
+    `).join('');
+  }
+
+  // ---------- 编辑 ----------
+  function enterEdit(id) {
+    editingId = id;
+    render();
+  }
+
+  async function saveEdit(id, text) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+    todo.text = trimmed;
+    await putTodo(todo);
+    editingId = null;
+    render();
+  }
+
+  function cancelEdit() {
+    editingId = null;
+    render();
+  }
+
+  // ---------- 删除 / 撤销 ----------
+  async function softDelete(id) {
+    const todo = todos.find(t => t.id === id);
+    if (!todo) return;
+    const deleted = { ...todo, deletedAt: Date.now() };
+    await putDeleted(deleted);
+    await deleteTodo(id);
+    revokeTodoUrls(id);
+    todos = todos.filter(t => t.id !== id);
+    if (editingId === id) editingId = null;
+    render();
+    await updateDeletedUI();
+  }
+
+  async function restoreDeleted(id) {
+    const item = await getDeleted(id);
+    if (!item) return;
+    const { deletedAt, ...todo } = item;
+    await putTodo(todo);
+    await deleteDeleted(id);
+    todos.push(todo);
+    todos.sort((a, b) => b.id - a.id);
+    render();
+    await updateDeletedUI();
+  }
+
+  async function cleanupExpiredDeleted() {
+    const all = await getAllDeleted();
+    const cutoff = Date.now() - DAY_MS;
+    for (const item of all) {
+      if (item.deletedAt < cutoff) {
+        await deleteDeleted(item.id);
+      }
+    }
   }
 
   // ---------- 图片查看器 ----------
@@ -239,7 +374,7 @@
       for (const item of list) {
         if (!item || typeof item.text !== 'string') continue;
         const id = Number(item.id) || Date.now() + Math.random();
-        const existing = await getTodo(id);
+        const existing = await getFrom(STORE, id);
         if (existing) { skipped++; continue; }
 
         const rawImgs = Array.isArray(item.images) ? item.images
@@ -293,10 +428,19 @@
       </div>
       <div class="image-preview" id="todoImgPreview" hidden></div>
       <ul id="todoList"></ul>
+      <button class="pill-btn deleted-toggle" id="todoDeletedToggle" hidden>最近删除 (0)</button>
+      <div class="deleted-section" id="todoDeletedSection" hidden>
+        <div class="deleted-header">最近删除（24 小时内可撤销）</div>
+        <ul id="todoDeletedList"></ul>
+      </div>
       <input type="file" id="todoImportFile" accept="application/json,.json" hidden>
     `,
     async onReady(panel) {
       listEl = panel.querySelector('#todoList');
+      deletedToggleEl = panel.querySelector('#todoDeletedToggle');
+      deletedSectionEl = panel.querySelector('#todoDeletedSection');
+      deletedListEl = panel.querySelector('#todoDeletedList');
+
       const input = panel.querySelector('#todoInput');
       const addBtn = panel.querySelector('#todoAddBtn');
       const imgBtn = panel.querySelector('#todoImgBtn');
@@ -309,6 +453,7 @@
       try {
         db = await openDB();
         await migrateFromLocalStorage();
+        await cleanupExpiredDeleted();
         todos = await getAllTodos();
         todos.sort((a, b) => b.id - a.id);
       } catch (e) {
@@ -317,6 +462,7 @@
         return;
       }
       render();
+      await updateDeletedUI();
 
       imgBtn.addEventListener('click', () => imgFile.click());
 
@@ -363,6 +509,17 @@
         if (f) await importBackup(f);
       });
 
+      deletedToggleEl.addEventListener('click', () => {
+        deletedSectionEl.hidden = !deletedSectionEl.hidden;
+      });
+
+      deletedListEl.addEventListener('click', async e => {
+        const btn = e.target.closest('[data-restore]');
+        if (!btn) return;
+        const id = Number(btn.dataset.restore);
+        await restoreDeleted(id);
+      });
+
       listEl.addEventListener('click', async e => {
         const li = e.target.closest('li');
         if (!li) return;
@@ -375,17 +532,12 @@
           return;
         }
 
-        if (e.target.classList.contains('del')) {
-          try {
-            await deleteTodo(id);
-            revokeTodoUrls(id);
-            todos = todos.filter(t => t.id !== id);
-            render();
-          } catch (err) { console.warn(err); }
+        if (e.target.dataset.del !== undefined) {
+          try { await softDelete(id); } catch (err) { console.warn(err); }
           return;
         }
 
-        if (e.target.classList.contains('thumb-del') && todo) {
+        if (e.target.dataset.thumbdel !== undefined && todo) {
           const idx = Number(e.target.dataset.idx);
           if (Array.isArray(todo.images) && idx >= 0 && idx < todo.images.length) {
             todo.images.splice(idx, 1);
@@ -396,7 +548,7 @@
           return;
         }
 
-        if (e.target.classList.contains('del-img') && todo) {
+        if (e.target.dataset.delimg !== undefined && todo) {
           delete todo.images;
           revokeTodoUrls(id);
           try { await putTodo(todo); render(); } catch (err) { console.warn(err); }
@@ -405,6 +557,23 @@
 
         if (e.target.classList.contains('todo-thumb')) {
           openImageViewer(e.target.dataset.preview);
+          return;
+        }
+
+        if (e.target.dataset.edit !== undefined) {
+          enterEdit(id);
+          return;
+        }
+
+        if (e.target.dataset.save !== undefined) {
+          const inp = li.querySelector('.edit-input');
+          if (inp) await saveEdit(id, inp.value);
+          return;
+        }
+
+        if (e.target.dataset.cancel !== undefined) {
+          cancelEdit();
+          return;
         }
       });
     }
