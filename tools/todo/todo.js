@@ -17,7 +17,6 @@
   let deletedListEl = null;
   const objectUrls = new Map();
 
-  // ---------- IndexedDB ----------
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -79,7 +78,6 @@
   const deleteTodo = (id) => deleteFrom(STORE, id);
   const deleteDeleted = (id) => deleteFrom(DELETED_STORE, id);
 
-  // ---------- 迁移旧 localStorage ----------
   async function migrateFromLocalStorage() {
     const raw = localStorage.getItem(LEGACY_KEY);
     if (!raw) return;
@@ -107,7 +105,6 @@
     }
   }
 
-  // ---------- 工具 ----------
   function escapeHtml(str) {
     return str.replace(/[&<>"']/g, c => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -147,7 +144,7 @@
     return `${Math.floor(diff / 3600000)} 小时前删除`;
   }
 
-  // ---------- 渲染主列表 ----------
+  // ---------- 渲染 ----------
   function render() {
     if (!listEl) return;
     if (todos.length === 0) {
@@ -171,7 +168,6 @@
       return `
         <li data-id="${t.id}" class="${t.done ? 'done' : ''} ${isExpanded ? 'expanded' : ''}">
           <div class="todo-main">
-            <button class="toggle">✓</button>
             <div class="todo-body">
               ${isEditing
                 ? `<div class="edit-row">
@@ -181,12 +177,11 @@
                        <button class="action-btn" data-cancel="1">取消</button>
                      </div>
                    </div>`
-                : `<span class="todo-text" data-toggleexpand="${t.id}">${escapeHtml(t.text)}</span>`
+                : `<span class="todo-text" data-toggledone="${t.id}" title="点击切换完成状态">${escapeHtml(t.text)}</span>`
               }
               ${imgs ? `<div class="todo-thumbs">${imgs}</div>` : ''}
             </div>
-            ${!isEditing && (t.images && t.images.length > 0) ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多">⋯</button>` : ''}
-            ${!isEditing && (!t.images || t.images.length === 0) ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多">⋯</button>` : ''}
+            ${!isEditing ? `<button class="icon-more" data-toggleexpand="${t.id}" title="更多">⋯</button>` : ''}
           </div>
           ${isExpanded && !isEditing ? `
             <div class="todo-actions expanded-actions">
@@ -234,12 +229,7 @@
     `).join('');
   }
 
-  // ---------- 编辑 ----------
-  function enterEdit(id) {
-    editingId = id;
-    expandedId = id;
-    render();
-  }
+  function enterEdit(id) { editingId = id; expandedId = id; render(); }
 
   async function saveEdit(id, text) {
     const trimmed = text.trim();
@@ -252,12 +242,8 @@
     render();
   }
 
-  function cancelEdit() {
-    editingId = null;
-    render();
-  }
+  function cancelEdit() { editingId = null; render(); }
 
-  // ---------- 删除 / 撤销 ----------
   async function softDelete(id) {
     const todo = todos.find(t => t.id === id);
     if (!todo) return;
@@ -292,7 +278,6 @@
     }
   }
 
-  // ---------- 图片查看器 ----------
   function openImageViewer(src) {
     const viewer = document.createElement('div');
     viewer.className = 'img-viewer';
@@ -307,13 +292,9 @@
     document.addEventListener('keydown', onKey);
   }
 
-  // ---------- 预览区 ----------
   function renderPreview(container) {
     container.innerHTML = '';
-    if (pendingImages.length === 0) {
-      container.hidden = true;
-      return;
-    }
+    if (pendingImages.length === 0) { container.hidden = true; return; }
     container.hidden = false;
     pendingImages.forEach((blob, idx) => {
       const item = document.createElement('div');
@@ -329,21 +310,13 @@
     });
   }
 
-  // ---------- 导出 ----------
   async function exportBackup() {
     try {
       const all = await getAllTodos();
-      const data = {
-        app: 'my-space-todo',
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        todos: []
-      };
+      const data = { app: 'my-space-todo', version: 1, exportedAt: new Date().toISOString(), todos: [] };
       for (const t of all) {
         data.todos.push({
-          id: t.id,
-          text: t.text,
-          done: !!t.done,
+          id: t.id, text: t.text, done: !!t.done,
           images: t.images ? await Promise.all(t.images.map(blobToDataUrl)) : []
         });
       }
@@ -354,9 +327,7 @@
       const stamp = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}-${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}`;
       a.href = url;
       a.download = `todo-backup-${stamp}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       alert('导出失败：' + (e.message || e));
@@ -364,23 +335,18 @@
     }
   }
 
-  // ---------- 导入 ----------
   async function importBackup(file) {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
       const list = Array.isArray(data) ? data : (data.todos || []);
-      if (!Array.isArray(list) || list.length === 0) {
-        alert('备份文件里没有可导入的任务');
-        return;
-      }
+      if (!Array.isArray(list) || list.length === 0) { alert('备份文件里没有可导入的任务'); return; }
       let added = 0, skipped = 0;
       for (const item of list) {
         if (!item || typeof item.text !== 'string') continue;
         const id = Number(item.id) || Date.now() + Math.random();
         const existing = await getFrom(STORE, id);
         if (existing) { skipped++; continue; }
-
         const rawImgs = Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []);
         const images = [];
         for (const img of rawImgs) {
@@ -388,10 +354,7 @@
             try { images.push(await fetch(img).then(r => r.blob())); } catch (e) {}
           }
         }
-        await putTodo({
-          id, text: item.text, done: !!item.done,
-          ...(images.length ? { images } : {})
-        });
+        await putTodo({ id, text: item.text, done: !!item.done, ...(images.length ? { images } : {}) });
         added++;
       }
       todos = await getAllTodos();
@@ -404,6 +367,52 @@
     }
   }
 
+  // ---------- 一键下载全部图片 ----------
+  async function downloadAllImages() {
+    try {
+      const all = await getAllTodos();
+      const files = [];
+      for (const t of all) {
+        if (!t.images || !t.images.length) continue;
+        for (let i = 0; i < t.images.length; i++) {
+          const blob = t.images[i];
+          const ext = guessExt(blob.type);
+          const safeText = (t.text || 'task').replace(/[\\/:*?"<>|]/g, '_').slice(0, 20);
+          files.push({ name: `${safeText}_${i + 1}.${ext}`, blob });
+        }
+      }
+      if (files.length === 0) { alert('当前没有任何任务图片可下载'); return; }
+
+      // 逐个触发下载（浏览器会连续弹出多个保存，或按设置自动保存到下载目录）
+      let count = 0;
+      for (const f of files) {
+        const url = URL.createObjectURL(f.blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = f.name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        count++;
+        await new Promise(r => setTimeout(r, 200));
+      }
+      alert(`已开始下载 ${count} 张图片，浏览器可能会连续弹出保存提示。`);
+    } catch (e) {
+      alert('下载失败：' + (e.message || e));
+      console.warn(e);
+    }
+  }
+
+  function guessExt(type) {
+    if (!type) return 'jpg';
+    if (type.includes('png')) return 'png';
+    if (type.includes('gif')) return 'gif';
+    if (type.includes('webp')) return 'webp';
+    if (type.includes('svg')) return 'svg';
+    return 'jpg';
+  }
+
   // ---------- 注册 ----------
   window.registerTool({
     iconId: 'todoIcon',
@@ -413,15 +422,24 @@
     panelHTML: `
       <div class="panel-header">
         <h2>待办清单</h2>
-        <div class="header-actions">
-          <button class="pill-btn" id="todoExportBtn" title="导出备份文件">⬇️ 导出</button>
-          <button class="pill-btn" id="todoImportBtn" title="导入备份文件">⬆️ 导入</button>
-          <button class="close-btn" data-close>✕</button>
-        </div>
+        <button class="close-btn" data-close>✕</button>
+      </div>
+      <div class="tool-bar">
+        <button class="tool-chip export" id="todoExportBtn" title="导出备份文件">
+          <span class="chip-icon">⬇</span><span>导出</span>
+        </button>
+        <button class="tool-chip import" id="todoImportBtn" title="导入备份文件">
+          <span class="chip-icon">⬆</span><span>导入</span>
+        </button>
+        <button class="tool-chip images" id="todoDownloadAllBtn" title="下载全部图片">
+          <span class="chip-icon">🖼</span><span>下载全部图片</span>
+        </button>
       </div>
       <div class="input-row">
         <input type="text" id="todoInput" placeholder="今天想完成什么？" maxlength="60">
-        <button class="img-pick-btn" id="todoImgBtn" title="添加图片">📷 图片</button>
+        <button class="img-pick-btn" id="todoImgBtn" title="添加图片">
+          <span class="chip-icon">📷</span><span>图片</span>
+        </button>
         <button class="add-btn" id="todoAddBtn">添加</button>
         <input type="file" id="todoImgFile" accept="image/*" multiple hidden>
       </div>
@@ -447,6 +465,7 @@
       const previewWrap = panel.querySelector('#todoImgPreview');
       const exportBtn = panel.querySelector('#todoExportBtn');
       const importBtn = panel.querySelector('#todoImportBtn');
+      const downloadAllBtn = panel.querySelector('#todoDownloadAllBtn');
       const importFile = panel.querySelector('#todoImportFile');
 
       try {
@@ -464,7 +483,6 @@
       await updateDeletedUI();
 
       imgBtn.addEventListener('click', () => imgFile.click());
-
       imgFile.addEventListener('change', () => {
         const files = Array.from(imgFile.files || []);
         imgFile.value = '';
@@ -477,10 +495,7 @@
       addBtn.addEventListener('click', async () => {
         const text = input.value.trim();
         if (!text) return;
-        const todo = {
-          id: Date.now(), text, done: false,
-          ...(pendingImages.length ? { images: [...pendingImages] } : {})
-        };
+        const todo = { id: Date.now(), text, done: false, ...(pendingImages.length ? { images: [...pendingImages] } : {}) };
         try {
           await putTodo(todo);
           todos.unshift(todo);
@@ -498,6 +513,7 @@
 
       exportBtn.addEventListener('click', exportBackup);
       importBtn.addEventListener('click', () => importFile.click());
+      downloadAllBtn.addEventListener('click', downloadAllImages);
       importFile.addEventListener('change', async () => {
         const f = importFile.files && importFile.files[0];
         importFile.value = '';
@@ -520,7 +536,8 @@
         const id = Number(li.dataset.id);
         const todo = todos.find(t => t.id === id);
 
-        if (e.target.classList.contains('toggle') && todo) {
+        // 点文字切换完成状态
+        if (e.target.dataset.toggledone !== undefined && todo) {
           todo.done = !todo.done;
           try { await putTodo(todo); render(); } catch (err) { console.warn(err); }
           return;
@@ -533,10 +550,7 @@
           return;
         }
 
-        if (e.target.dataset.del !== undefined) {
-          await softDelete(id);
-          return;
-        }
+        if (e.target.dataset.del !== undefined) { await softDelete(id); return; }
 
         if (e.target.dataset.thumbdel !== undefined && todo) {
           const idx = Number(e.target.dataset.idx);
@@ -561,21 +575,13 @@
           return;
         }
 
-        if (e.target.dataset.edit !== undefined) {
-          enterEdit(id);
-          return;
-        }
-
+        if (e.target.dataset.edit !== undefined) { enterEdit(id); return; }
         if (e.target.dataset.save !== undefined) {
           const inp = li.querySelector('.edit-input');
           if (inp) await saveEdit(id, inp.value);
           return;
         }
-
-        if (e.target.dataset.cancel !== undefined) {
-          cancelEdit();
-          return;
-        }
+        if (e.target.dataset.cancel !== undefined) { cancelEdit(); return; }
       });
     }
   });
