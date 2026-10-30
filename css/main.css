@@ -12,6 +12,8 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+[hidden] { display: none !important; }
+
 body {
   min-height: 100vh;
   font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -164,7 +166,7 @@ body {
 /* ---------- 待办清单 ---------- */
 #todoList { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 #todoList li {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: flex-start; gap: 12px;
   padding: 14px 16px; border-radius: 16px;
   background: rgba(255,255,255,0.06);
   border: 1px solid transparent;
@@ -179,6 +181,7 @@ body {
 #todoList li.done .todo-text { text-decoration: line-through; color: var(--muted); }
 .toggle {
   width: 24px; height: 24px; flex-shrink: 0;
+  margin-top: 2px;
   border-radius: 8px; border: 2px solid var(--accent);
   background: transparent; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -191,13 +194,6 @@ li.done .toggle {
   border-color: transparent; color: #fff;
 }
 .todo-text { flex: 1; font-size: 0.95rem; word-break: break-word; }
-.del {
-  flex-shrink: 0; width: 30px; height: 30px;
-  border-radius: 50%; border: none; background: transparent;
-  color: var(--muted); font-size: 15px; cursor: pointer;
-  transition: background 0.2s, color 0.2s;
-}
-.del:hover { background: rgba(244,114,182,0.25); color: var(--accent2); }
 .empty { text-align: center; color: var(--muted); font-size: 0.9rem; padding: 24px 0; }
 
 .panel::-webkit-scrollbar { width: 6px; }
@@ -297,6 +293,7 @@ li.done .toggle {
 }
 .img-remove-btn:hover { background: rgba(244,114,182,0.8); }
 
+/* ---------- 待办清单：任务内容区 ---------- */
 .todo-body {
   flex: 1;
   display: flex;
@@ -308,6 +305,57 @@ li.done .toggle {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+.todo-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.action-btn {
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: rgba(255,255,255,0.05);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.2s;
+}
+.action-btn:hover {
+  background: rgba(167,139,250,0.2);
+  color: var(--text);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+.action-btn:active { transform: scale(0.96); }
+.action-btn.danger:hover {
+  background: rgba(244,114,182,0.25);
+  color: var(--accent2);
+  border-color: var(--accent2);
+}
+.action-btn.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  border-color: transparent;
+  color: #fff;
+}
+.action-btn.primary:hover {
+  box-shadow: 0 4px 12px rgba(244,114,182,0.4);
+}
+
+/* 编辑态 */
+.edit-row { width: 100%; }
+.edit-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  font-size: 0.95rem;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(167,139,250,0.2);
 }
 
 /* ---------- 待办清单：单张图片删除 ---------- */
@@ -356,19 +404,6 @@ li.done .toggle {
   transform: scale(1.08);
 }
 
-.del-img {
-  flex-shrink: 0;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 8px;
-  transition: background 0.2s, color 0.2s;
-}
-.del-img:hover { background: rgba(244,114,182,0.2); color: var(--accent2); }
-
 .img-viewer {
   position: fixed;
   inset: 0;
@@ -393,6 +428,56 @@ li.done .toggle {
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* ---------- 最近删除 ---------- */
+.deleted-toggle {
+  width: 100%;
+  justify-content: center;
+  margin-top: 14px;
+}
+.deleted-section {
+  margin-top: 12px;
+  border-top: 1px solid var(--glass-border);
+  padding-top: 12px;
+}
+.deleted-header {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+#todoDeletedList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.deleted-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.04);
+}
+.deleted-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.deleted-text {
+  font-size: 0.85rem;
+  color: var(--text);
+  text-decoration: line-through;
+  opacity: 0.7;
+  word-break: break-word;
+}
+.deleted-time {
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 
 /* ---------- 番茄钟 ---------- */
