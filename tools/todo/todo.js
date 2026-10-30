@@ -171,7 +171,7 @@
         const url = getObjectUrl(t.id, i, blob);
         return `
           <div class="thumb-wrap">
-            <img class="todo-thumb" src="${url}" alt="任务图片" data-preview="${url}">
+            <img class="todo-thumb" src="${url}" alt="任务图片" data-previewid="${t.id}" data-previewindex="${i}">
             <button class="thumb-del-text" data-thumbdel="${t.id}" data-idx="${i}">删除</button>
           </div>
         `;
@@ -319,18 +319,113 @@
     alert(`已开始下载 ${count} 张图片`);
   }
 
-  // ---------- 图片查看器 ----------
-  function openImageViewer(src) {
+  // ---------- 图片查看器（支持多图滑动） ----------
+  function openImageViewer(urls, startIndex = 0) {
+    if (!urls || urls.length === 0) return;
+
+    let index = Math.min(Math.max(startIndex, 0), urls.length - 1);
+    let startX = 0;
+    let startY = 0;
+    let dragging = false;
+    let moved = false;
+
     const viewer = document.createElement('div');
     viewer.className = 'img-viewer';
-    viewer.innerHTML = `<img src="${src}" alt="查看图片">`;
+    viewer.innerHTML = `
+      <div class="img-viewer-inner">
+        <img class="img-viewer-img" src="${urls[index]}" alt="查看图片">
+        <div class="img-viewer-counter">${index + 1} / ${urls.length}</div>
+        ${urls.length > 1 ? `
+          <button class="img-nav prev" title="上一张">‹</button>
+          <button class="img-nav next" title="下一张">›</button>
+        ` : ''}
+      </div>
+    `;
     document.body.appendChild(viewer);
-    const close = () => {
+
+    const imgEl = viewer.querySelector('.img-viewer-img');
+    const counterEl = viewer.querySelector('.img-viewer-counter');
+    const prevBtn = viewer.querySelector('.img-nav.prev');
+    const nextBtn = viewer.querySelector('.img-nav.next');
+
+    function update() {
+      imgEl.src = urls[index];
+      if (counterEl) counterEl.textContent = `${index + 1} / ${urls.length}`;
+    }
+
+    function go(delta) {
+      if (urls.length <= 1) return;
+      index = (index + delta + urls.length) % urls.length;
+      update();
+    }
+
+    function close() {
       viewer.remove();
       document.removeEventListener('keydown', onKey);
-    };
-    const onKey = e => { if (e.key === 'Escape') close(); };
-    viewer.addEventListener('click', close);
+    }
+
+    function onKey(e) {
+      if (e.key === 'Escape') close();
+      else if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'ArrowRight') go(1);
+    }
+
+    if (prevBtn) prevBtn.addEventListener('click', e => { e.stopPropagation(); go(-1); });
+    if (nextBtn) nextBtn.addEventListener('click', e => { e.stopPropagation(); go(1); });
+
+    // 点击背景关闭（点图片或按钮不关闭）
+    viewer.addEventListener('click', e => {
+      if (e.target === viewer || e.target.classList.contains('img-viewer-inner')) {
+        if (!moved) close();
+      }
+    });
+
+    // 触摸滑动
+    viewer.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) return;
+      dragging = true;
+      moved = false;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    viewer.addEventListener('touchmove', e => {
+      if (!dragging || e.touches.length !== 1) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = e.touches[0].clientY - startY;
+      if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved = true;
+    }, { passive: true });
+
+    viewer.addEventListener('touchend', e => {
+      if (!dragging) return;
+      dragging = false;
+      const t = e.changedTouches && e.changedTouches[0];
+      if (!t) return;
+      const dx = t.clientX - startX;
+      const dy = t.clientY - startY;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+        go(dx < 0 ? 1 : -1);
+      }
+    });
+
+    // 鼠标拖拽切换（电脑端）
+    viewer.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      startX = e.clientX;
+      startY = e.clientY;
+    });
+    viewer.addEventListener('mouseup', e => {
+      if (!dragging) return;
+      dragging = false;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+        go(dx < 0 ? 1 : -1);
+      }
+    });
+
     document.addEventListener('keydown', onKey);
   }
 
@@ -565,7 +660,13 @@
         }
 
         if (e.target.classList.contains('todo-thumb')) {
-          openImageViewer(e.target.dataset.preview);
+          const tid = Number(e.target.dataset.previewid);
+          const idx = Number(e.target.dataset.previewindex) || 0;
+          const target = todos.find(t => t.id === tid);
+          if (target && target.images && target.images.length) {
+            const urls = target.images.map((blob, i) => getObjectUrl(tid, i, blob));
+            openImageViewer(urls, idx);
+          }
           return;
         }
 
