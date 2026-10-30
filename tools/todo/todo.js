@@ -230,7 +230,6 @@
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      // 兼容：{todos:[...]} 或直接是数组
       const list = Array.isArray(data) ? data : (data.todos || []);
       if (!Array.isArray(list) || list.length === 0) {
         alert('备份文件里没有可导入的任务');
@@ -250,7 +249,7 @@
           if (typeof img === 'string' && img.startsWith('data:')) {
             try {
               images.push(await fetch(img).then(r => r.blob()));
-            } catch (e) { /* 跳过坏图 */ }
+            } catch (e) {}
           }
         }
         await putTodo({
@@ -281,14 +280,14 @@
       <div class="panel-header">
         <h2>待办清单</h2>
         <div class="header-actions">
-          <button class="icon-btn" id="todoExportBtn" title="导出备份">⬆️</button>
-          <button class="icon-btn" id="todoImportBtn" title="导入备份">⬇️</button>
+          <button class="pill-btn" id="todoExportBtn" title="导出备份文件">⬇️ 导出</button>
+          <button class="pill-btn" id="todoImportBtn" title="导入备份文件">⬆️ 导入</button>
           <button class="close-btn" data-close>✕</button>
         </div>
       </div>
       <div class="input-row">
         <input type="text" id="todoInput" placeholder="今天想完成什么？" maxlength="60">
-        <button class="img-pick-btn" id="todoImgBtn" title="添加图片">📷</button>
+        <button class="img-pick-btn" id="todoImgBtn" title="添加图片">📷 图片</button>
         <button class="add-btn" id="todoAddBtn">添加</button>
         <input type="file" id="todoImgFile" accept="image/*" multiple hidden>
       </div>
@@ -370,14 +369,12 @@
         const id = Number(li.dataset.id);
         const todo = todos.find(t => t.id === id);
 
-        // 勾选完成
         if (e.target.classList.contains('toggle') && todo) {
           todo.done = !todo.done;
           try { await putTodo(todo); render(); } catch (err) { console.warn(err); }
           return;
         }
 
-        // 删除整个任务
         if (e.target.classList.contains('del')) {
           try {
             await deleteTodo(id);
@@ -388,7 +385,6 @@
           return;
         }
 
-        // 删除单张图片（手机/电脑都可用）
         if (e.target.classList.contains('thumb-del') && todo) {
           const idx = Number(e.target.dataset.idx);
           if (Array.isArray(todo.images) && idx >= 0 && idx < todo.images.length) {
@@ -400,7 +396,6 @@
           return;
         }
 
-        // 移除全部图片
         if (e.target.classList.contains('del-img') && todo) {
           delete todo.images;
           revokeTodoUrls(id);
@@ -408,15 +403,10 @@
           return;
         }
 
-        // 点缩略图放大
         if (e.target.classList.contains('todo-thumb')) {
-          openImageWithViewer(e.target.dataset.preview);
+          openImageViewer(e.target.dataset.preview);
         }
       });
     }
   });
-
-  function openImageWithViewer(src) {
-    openImageViewer(src);
-  }
 })();
